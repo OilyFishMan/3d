@@ -16,14 +16,14 @@
 #define string_array_len(string_) (array_len(string_) - 1)
 
 #define current_time \
-    ({ struct timespec ts_now_; clock_gettime(CLOCK_REALTIME, &ts_now_); ts_now_; })
+    ({ struct timespec ts_now_; \
+       clock_gettime(CLOCK_REALTIME, &ts_now_); \
+       (double) ts_now_.tv_sec + (double) ts_now_.tv_nsec * 1e-9; })
 
 #define fixed_delta (1.0/60.0)
 
 int main(void)
 {
-    //fprintf(stderr, "%f %f, %f %f\n", width, height, width, height);
-    //return 0;
     bool success = true;
 
     const char progression[] = " .+13#";
@@ -45,10 +45,11 @@ int main(void)
     set_escdelay(50);
     curs_set(0);
 
+    const double time_start = current_time;
     size_t tick = 0;
 
     while (true) {
-        const struct timespec ts_begin = current_time;
+        const double frame_begin = current_time;
 
         for (int y = 0; y < (int) height; ++y) {
             for (int x = 0; x < (int) width; ++x) {
@@ -57,12 +58,21 @@ int main(void)
 
                 float diff = 1.0f;
 
-                for (size_t i = 0; i <= 10; ++i) {
-                    const float pos_x = 0.5f + cosf((tick + i * i) * 2.0f * M_PI * 1.0f / 1000.0f) * (i % 10 * 0.125f);
-                    const float pos_y = 0.5f + sinf((tick + i * i) * 2.0f * M_PI * 1.0f / 1000.0f) * (i % 10 * 0.125f);
+                size_t count = (size_t) ((frame_begin - time_start) / (1.0f / 50.0f));
+                if (count > 20) {
+                    count = 20;
+                }
 
-                    diff *= fmin( ((normal_y - pos_y) * (normal_y - pos_y) + (normal_x - pos_x) * (normal_x - pos_x))
-                                / ((sinf(tick * 2.0f * M_PI * 1.0f / 200.0f) + 1.0f) * 0.03f + 0.05f), 2.0f);
+                for (size_t i = 0; i < count; ++i) {
+                    const float pos_x = 0.5f + cosf(tick * 2.0f * M_PI * 1e-3f + i * 2.0f * M_PI / count) * 2e-2f * (i % 20) * (frame_begin - time_start) / 2.0f;
+                    const float pos_y = 0.5f + sinf(tick * 2.0f * M_PI * 1e-3f + i * 2.0f * M_PI / count) * 2e-2f * (i % 20) * (frame_begin - time_start) / 2.0f;
+
+                    const float radius = ((sinf(tick * 2.0f * M_PI * 2e-2) + 1.0f) * 1e-3f + 3e-2f);
+                    const float individual_diff = ((normal_y - pos_y) * (normal_y - pos_y) + (normal_x - pos_x) * (normal_x - pos_x));
+
+                    if (individual_diff < radius) {
+                        diff *= individual_diff / radius;
+                    }
                 }
 
                 screen[y * width + x] = 1.0f - fmin(1.0f, diff);
@@ -95,11 +105,10 @@ int main(void)
         }
         refresh();
 
-        const struct timespec ts_end = current_time;
-        const double diff = (double) (ts_end.tv_sec - ts_begin.tv_sec)
-                          + 1e-9 * (double) (ts_end.tv_nsec - ts_begin.tv_nsec);
-        if (diff < fixed_delta) {
-            usleep((fixed_delta - diff) * 1e+6);
+        const double frame_end = current_time;
+        const double delta = frame_end - frame_begin;
+        if (delta < fixed_delta) {
+            usleep((fixed_delta - delta) * 1e+6);
         }
         ++tick;
     }
